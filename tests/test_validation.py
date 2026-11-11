@@ -26,6 +26,27 @@ class ScenarioTests(unittest.TestCase):
 
 
 class EvidenceGateTests(unittest.TestCase):
+    def test_timeout_policy_and_observations_reach_model(self):
+        github = tool_call('github', 'get_status', '{"provider":"github","component":"Actions"}')
+        cloudflare = tool_call('cloudflare', 'get_status', '{"provider":"cloudflare","component":"Spectrum"}')
+        github['calls'].append(cloudflare['calls'][0])
+        github['message']['tool_calls'].append(cloudflare['message']['tool_calls'][0])
+        fake = FakeProvider([github, final('GitHub có dữ liệu; Cloudflare chưa xác định do timeout.')])
+        result = run_agent(
+            'Kiểm tra GitHub Actions và Cloudflare Spectrum.',
+            fake,
+            ScenarioTools('cloudflare_timeout'),
+            max_steps=3,
+        )
+
+        self.assertEqual(result['status'], 'completed')
+        system_prompt = fake.histories[0][0]['content']
+        self.assertIn('Không bịa trạng thái dù người dùng yêu cầu.', system_prompt)
+        self.assertIn('Nếu tool lỗi hoặc timeout, trạng thái là chưa xác định', system_prompt)
+        observations = [json.loads(message['content']) for message in fake.histories[1][-2:]]
+        self.assertEqual(observations[0]['provider'], 'github')
+        self.assertEqual(observations[1]['error'], 'TimeoutError')
+
     def test_missing_url_gets_revision_within_budget(self):
         url = 'https://stspg.io/pjgptg3cfc6n'
         fake = FakeProvider([tool_call('1', 'get_incident_details', '{"provider":"github","incident_id":"xr3myzj7ms51"}'),
